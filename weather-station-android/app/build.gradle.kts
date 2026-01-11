@@ -14,12 +14,12 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.example.weather_station_android"
-    compileSdk = 34 // Zmieniłem na standardowy zapis dla stabilności, ale możesz wrócić do wersji release(36) jeśli używasz preview
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.example.weather_station_android"
         minSdk = 26
-        targetSdk = 34 // Dostosowane do compileSdk
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -41,8 +41,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
     buildFeatures {
         viewBinding = true
@@ -63,5 +63,6 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-
+    // Biblioteka do "pociągnij żeby odświeżyć"
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }

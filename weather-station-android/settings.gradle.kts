@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "weather-station-android"
+rootProject.name = "Weather-Station"
 include(":app")
  

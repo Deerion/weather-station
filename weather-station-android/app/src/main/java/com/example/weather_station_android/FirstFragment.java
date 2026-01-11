@@ -12,10 +12,12 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.example.weather_station_android.databinding.FragmentFirstBinding;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -28,7 +30,6 @@ public class FirstFragment extends Fragment {
     private FragmentFirstBinding binding;
     private static final String TAG = "WeatherApp";
 
-    // Handler do automatycznego odświeżania
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable refreshRunnable;
 
@@ -44,40 +45,40 @@ public class FirstFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        // Konfiguracja listy (RecyclerView)
         binding.recyclerHistory.setLayoutManager(new LinearLayoutManager(getContext()));
 
-        // Pobierz dane na start
-        fetchWeatherData();
-
-        // Obsługa przycisku odświeżania (Floating Action Button)
-        binding.buttonRefresh.setOnClickListener(v -> {
-            binding.statusText.setText("ODŚWIEŻANIE...");
-            // Używamy setCardBackgroundColor dla MaterialCardView (zamiast setBackgroundColor)
-            binding.statusContainer.setCardBackgroundColor(Color.parseColor("#1976D2")); // Niebieski akcent
-            fetchWeatherData();
+        // Pull-to-Refresh
+        binding.swipeRefresh.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                binding.statusText.setText("ODŚWIEŻANIE...");
+                binding.statusContainer.setCardBackgroundColor(Color.parseColor("#1976D2"));
+                fetchWeatherData();
+            }
         });
 
-        // Automatyczne odświeżanie co 30 sekund
+        fetchWeatherData();
         setupAutoRefresh();
     }
 
     private void fetchWeatherData() {
-        // Pobieramy 50 ostatnich pomiarów
         RetrofitClient.getApi().getLatestReading("*", "created_at.desc", 50)
                 .enqueue(new Callback<List<WeatherReading>>() {
                     @Override
                     public void onResponse(Call<List<WeatherReading>> call, Response<List<WeatherReading>> response) {
+                        binding.swipeRefresh.setRefreshing(false);
+
                         if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
                             List<WeatherReading> dataList = response.body();
 
-                            // 1. Zaktualizuj Główną Kartę (najnowszy pomiar)
                             updateMainCard(dataList.get(0));
-
-                            // 2. Sprawdź status (ONLINE/OFFLINE)
                             checkOnlineStatus(dataList.get(0).createdAt);
 
-                            // 3. Wypełnij listę historią
+                            // Powiadomienie (Alert mrozu)
+                            if (getActivity() instanceof MainActivity) {
+                                ((MainActivity) getActivity()).checkTemperatureAndNotify(dataList.get(0).temperature);
+                            }
+
                             WeatherAdapter adapter = new WeatherAdapter(dataList);
                             binding.recyclerHistory.setAdapter(adapter);
 
@@ -89,6 +90,7 @@ public class FirstFragment extends Fragment {
 
                     @Override
                     public void onFailure(Call<List<WeatherReading>> call, Throwable t) {
+                        binding.swipeRefresh.setRefreshing(false);
                         Log.e(TAG, "Błąd sieci: " + t.getMessage());
                         showErrorStatus();
                     }
@@ -97,40 +99,30 @@ public class FirstFragment extends Fragment {
 
     private void updateMainCard(WeatherReading data) {
         if (binding == null) return;
-
-        // Formatowanie temperatury (prostsze, bez zbędnych liter, bo są w layoutcie)
         binding.textTemp.setText(String.format("%.1f°", data.temperature));
-
-        // Wilgotność i Ciśnienie
         binding.textHumidity.setText(String.format("%.0f%%", data.humidity));
         binding.textPressure.setText(String.format("%.0f hPa", data.pressure));
 
-        // Jakość powietrza
         String qualityText = (data.airStatus != null) ? data.airStatus : "Nieznana";
         binding.textAirQuality.setText("Jakość: " + qualityText + " (Indeks: " + (int)data.airQualityIndex + ")");
-
-        // WAŻNE: Na niebieskim gradiencie kolorowy tekst (czerwony/zielony) jest nieczytelny.
-        // Ustawiamy tekst na biały dla profesjonalnego kontrastu.
         binding.textAirQuality.setTextColor(Color.WHITE);
     }
 
     private void checkOnlineStatus(String lastMeasurementTime) {
         if (binding == null) return;
         try {
-            // Parsowanie czasu z bazy (UTC)
-            Instant lastTime = Instant.parse(lastMeasurementTime);
+            Instant lastTime = OffsetDateTime.parse(lastMeasurementTime).toInstant();
             Instant now = Instant.now();
 
-            // Różnica w sekundach
             long secondsDiff = ChronoUnit.SECONDS.between(lastTime, now);
-            // Log.d(TAG, "Ostatni pomiar był " + secondsDiff + " sekund temu.");
 
-            if (secondsDiff > 40) { // Limit offline
-                // OFFLINE - Czerwony (Material Red 600)
+            if (secondsDiff > 40) {
+                // OFFLINE - Czerwony
+                String timeAgo = formatDuration(secondsDiff);
                 binding.statusContainer.setCardBackgroundColor(Color.parseColor("#E53935"));
-                binding.statusText.setText("🔴 OFFLINE (" + secondsDiff + "s)");
+                binding.statusText.setText("🔴 OFFLINE (" + timeAgo + ")");
             } else {
-                // ONLINE - Zielony (Material Green 600)
+                // ONLINE - Zielony
                 binding.statusContainer.setCardBackgroundColor(Color.parseColor("#43A047"));
                 binding.statusText.setText("🟢 SYSTEM ONLINE");
             }
@@ -141,9 +133,35 @@ public class FirstFragment extends Fragment {
         }
     }
 
+    private String formatDuration(long totalSeconds) {
+        if (totalSeconds < 60) {
+            return totalSeconds + "s";
+        }
+
+        long minutes = totalSeconds / 60;
+        if (minutes < 60) {
+            return minutes + " min";
+        }
+
+        long hours = minutes / 60;
+        long remMinutes = minutes % 60;
+        if (hours < 24) {
+            return hours + " godz. " + remMinutes + " min";
+        }
+
+        long days = hours / 24;
+        long remHours = hours % 24;
+        if (days < 30) {
+            return days + " dni " + remHours + " godz.";
+        }
+
+        long months = days / 30;
+        long remDays = days % 30;
+        return months + " mies. " + remDays + " dni";
+    }
+
     private void showErrorStatus() {
         if (binding != null) {
-            // Szary kolor błędu
             binding.statusContainer.setCardBackgroundColor(Color.GRAY);
             binding.statusText.setText("❌ BŁĄD POŁĄCZENIA");
         }
@@ -154,7 +172,6 @@ public class FirstFragment extends Fragment {
             @Override
             public void run() {
                 fetchWeatherData();
-                // Ponów za 30 sekund
                 handler.postDelayed(this, 30000);
             }
         };
