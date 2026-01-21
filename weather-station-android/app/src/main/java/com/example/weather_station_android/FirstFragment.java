@@ -47,17 +47,21 @@ public class FirstFragment extends Fragment {
 
         binding.recyclerHistory.setLayoutManager(new LinearLayoutManager(getContext()));
 
-        // Pull-to-Refresh
         binding.swipeRefresh.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
             @Override
             public void onRefresh() {
+                restartAutoRefresh();
+
                 binding.statusText.setText("ODŚWIEŻANIE...");
                 binding.statusContainer.setCardBackgroundColor(Color.parseColor("#1976D2"));
                 fetchWeatherData();
             }
         });
 
+        // Pobierz dane na start
         fetchWeatherData();
+
+        // Uruchom automatyczne odświeżanie
         setupAutoRefresh();
     }
 
@@ -66,21 +70,25 @@ public class FirstFragment extends Fragment {
                 .enqueue(new Callback<List<WeatherReading>>() {
                     @Override
                     public void onResponse(Call<List<WeatherReading>> call, Response<List<WeatherReading>> response) {
-                        binding.swipeRefresh.setRefreshing(false);
+                        if (binding != null) {
+                            binding.swipeRefresh.setRefreshing(false);
+                        }
 
                         if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
                             List<WeatherReading> dataList = response.body();
 
-                            updateMainCard(dataList.get(0));
-                            checkOnlineStatus(dataList.get(0).createdAt);
+                            if (binding != null) {
+                                updateMainCard(dataList.get(0));
+                                checkOnlineStatus(dataList.get(0).createdAt);
 
-                            // Powiadomienie (Alert mrozu)
-                            if (getActivity() instanceof MainActivity) {
-                                ((MainActivity) getActivity()).checkTemperatureAndNotify(dataList.get(0).temperature);
+                                // Sprawdź alert mrozu
+                                if (getActivity() instanceof MainActivity) {
+                                    ((MainActivity) getActivity()).checkTemperatureAndNotify(dataList.get(0).temperature);
+                                }
+
+                                WeatherAdapter adapter = new WeatherAdapter(dataList);
+                                binding.recyclerHistory.setAdapter(adapter);
                             }
-
-                            WeatherAdapter adapter = new WeatherAdapter(dataList);
-                            binding.recyclerHistory.setAdapter(adapter);
 
                         } else {
                             Log.e(TAG, "Błąd pobierania: " + response.message());
@@ -90,7 +98,9 @@ public class FirstFragment extends Fragment {
 
                     @Override
                     public void onFailure(Call<List<WeatherReading>> call, Throwable t) {
-                        binding.swipeRefresh.setRefreshing(false);
+                        if (binding != null) {
+                            binding.swipeRefresh.setRefreshing(false);
+                        }
                         Log.e(TAG, "Błąd sieci: " + t.getMessage());
                         showErrorStatus();
                     }
@@ -117,12 +127,12 @@ public class FirstFragment extends Fragment {
             long secondsDiff = ChronoUnit.SECONDS.between(lastTime, now);
 
             if (secondsDiff > 40) {
-                // OFFLINE - Czerwony
+                // OFFLINE
                 String timeAgo = formatDuration(secondsDiff);
                 binding.statusContainer.setCardBackgroundColor(Color.parseColor("#E53935"));
                 binding.statusText.setText("🔴 OFFLINE (" + timeAgo + ")");
             } else {
-                // ONLINE - Zielony
+                // ONLINE
                 binding.statusContainer.setCardBackgroundColor(Color.parseColor("#43A047"));
                 binding.statusText.setText("🟢 SYSTEM ONLINE");
             }
@@ -134,30 +144,15 @@ public class FirstFragment extends Fragment {
     }
 
     private String formatDuration(long totalSeconds) {
-        if (totalSeconds < 60) {
-            return totalSeconds + "s";
-        }
-
+        if (totalSeconds < 60) return totalSeconds + "s";
         long minutes = totalSeconds / 60;
-        if (minutes < 60) {
-            return minutes + " min";
-        }
-
+        if (minutes < 60) return minutes + " min";
         long hours = minutes / 60;
         long remMinutes = minutes % 60;
-        if (hours < 24) {
-            return hours + " godz. " + remMinutes + " min";
-        }
-
+        if (hours < 24) return hours + " godz. " + remMinutes + " min";
         long days = hours / 24;
         long remHours = hours % 24;
-        if (days < 30) {
-            return days + " dni " + remHours + " godz.";
-        }
-
-        long months = days / 30;
-        long remDays = days % 30;
-        return months + " mies. " + remDays + " dni";
+        return days + " dni " + remHours + " godz.";
     }
 
     private void showErrorStatus() {
@@ -172,10 +167,18 @@ public class FirstFragment extends Fragment {
             @Override
             public void run() {
                 fetchWeatherData();
-                handler.postDelayed(this, 30000);
+                // 3 sekundy
+                handler.postDelayed(this, 3000);
             }
         };
-        handler.post(refreshRunnable);
+        handler.postDelayed(refreshRunnable, 3000);
+    }
+
+    private void restartAutoRefresh() {
+        if (refreshRunnable != null) {
+            handler.removeCallbacks(refreshRunnable);
+            handler.postDelayed(refreshRunnable, 3000);
+        }
     }
 
     @Override
